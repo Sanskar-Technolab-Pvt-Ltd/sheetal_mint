@@ -107,6 +107,7 @@ export interface LinkedPayment {
     posting_date: string,
     party_type?: string,
     party?: string,
+    party_name?: string,
     currency: string
 }
 

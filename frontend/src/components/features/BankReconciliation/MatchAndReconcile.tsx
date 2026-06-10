@@ -1,7 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { bankRecAmountFilter, bankRecDateAtom, bankRecRecordJournalEntryModalAtom, bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecTransactionTypeFilter, bankRecTransferModalAtom, selectedBankAccountAtom } from "./bankRecAtoms"
 import { H4 } from "@/components/ui/typography"
-import { useMemo, useRef } from "react"
+import { useMemo, useRef, useState, useEffect } from "react"
 import { getCompanyCurrency } from "@/lib/company"
 import ErrorBanner from "@/components/ui/error-banner"
 import { Separator } from "@/components/ui/separator"
@@ -743,10 +743,25 @@ const VouchersForTransaction = ({ transaction, contentHeight }: { transaction: U
     </div >
 }
 
+const partyNameField = (partyType: string) => {
+    if (partyType === 'Shareholder') return 'title'
+    return partyType.toLowerCase().replace(' ', '_') + '_name'
+}
+
 const VoucherItem = ({ voucher, index }: { voucher: LinkedPayment, index: number }) => {
 
     const selectedBank = useAtomValue(selectedBankAccountAtom)
     const selectedTransaction = useAtomValue(bankRecSelectedTransactionAtom(selectedBank?.name || ''))
+
+    const [partyName, setPartyName] = useState<string | undefined>()
+    useEffect(() => {
+        if (!voucher.party || !voucher.party_type) return
+        const nf = partyNameField(voucher.party_type)
+        fetch(`/api/method/frappe.client.get_value?` + new URLSearchParams({ doctype: voucher.party_type, filters: voucher.party, fieldname: nf }))
+            .then(r => r.json())
+            .then(d => { if (d.message?.[nf]) setPartyName(d.message[nf]) })
+            .catch(() => {})
+    }, [voucher.party, voucher.party_type])
 
     const { amountMatches, postingDateMatches, referenceDateMatches, referenceMatchesFull, referenceMatchesPartial, isSuggested } = useMemo(() => {
 
@@ -803,7 +818,7 @@ const VoucherItem = ({ voucher, index }: { voucher: LinkedPayment, index: number
                         <a target="_blank"
                             href={`/app/${slug(voucher.party_type)}/${voucher.party}`}
                             className="underline underline-offset-2 font-medium"
-                        >{voucher.party}</a>
+                        >{voucher.party}{partyName && partyName !== voucher.party ? ` (${partyName})` : ''}</a>
                     </div>}
                     <TooltipProvider>
                         <div className="flex items-center gap-1">
