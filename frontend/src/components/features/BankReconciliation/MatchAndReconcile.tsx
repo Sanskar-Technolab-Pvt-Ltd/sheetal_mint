@@ -818,7 +818,7 @@ const VoucherItem = ({ voucher, index }: { voucher: LinkedPayment, index: number
                         <a target="_blank"
                             href={`/app/${slug(voucher.party_type)}/${voucher.party}`}
                             className="underline underline-offset-2 font-medium"
-                        >{voucher.party}{partyName && partyName !== voucher.party ? ` (${partyName})` : ''}</a>
+                        >{partyName && partyName !== voucher.party ? `${partyName} (${voucher.party})` : voucher.party}</a>
                     </div>}
                     <TooltipProvider>
                         <div className="flex items-center gap-1">
