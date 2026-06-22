@@ -3,8 +3,8 @@ import { MissingFiltersBanner } from "./MissingFiltersBanner"
 import { bankRecDateAtom, SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
 import { useCurrentCompany } from "@/hooks/useCurrentCompany"
 import { Paragraph } from "@/components/ui/typography"
-import { useMemo, useState } from "react"
-import { useFrappeGetCall, useFrappePostCall, useSWRConfig } from "frappe-react-sdk"
+import { useContext, useEffect, useMemo, useState } from "react"
+import { FrappeConfig, FrappeContext, useFrappeGetCall, useFrappePostCall, useSWRConfig } from "frappe-react-sdk"
 import { QueryReportReturnType } from "@/types/custom/Reports"
 import { formatDate } from "@/lib/date"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -71,6 +71,50 @@ const BankClearanceSummaryView = () => {
         are_default_filters: false,
     }, `Report-Bank Clearance Summary-${filters}`, { keepPreviousData: true, revalidateOnFocus: false }, 'POST')
 
+    // Resolve party (Customer/Supplier) names for the "Against Account" column.
+    // The Bank Clearance Summary report only returns the party ID in `against`,
+    // so we look up the display names in bulk (2 requests total, regardless of
+    // the number of rows) and render them as "Name (ID)".
+    const { call } = useContext(FrappeContext) as FrappeConfig
+    const [partyNames, setPartyNames] = useState<Record<string, string>>({})
+
+    const againstIDs = useMemo(() => {
+        const ids = (data?.message.result ?? [])
+            .filter(row => row.payment_document_type === 'Payment Entry' || row.payment_document_type === 'Purchase Invoice')
+            .map(row => row.against)
+            .filter(Boolean)
+        return Array.from(new Set(ids))
+    }, [data])
+
+    useEffect(() => {
+        if (againstIDs.length === 0) {
+            setPartyNames({})
+            return
+        }
+        let cancelled = false
+        const fetchNames = (doctype: string, nameField: string) =>
+            call.post('frappe.client.get_list', {
+                doctype,
+                filters: [["name", "in", againstIDs]],
+                fields: ["name", nameField],
+                limit_page_length: 0,
+            }).then((r: { message: Record<string, string>[] }) => r.message ?? [])
+                .catch(() => [] as Record<string, string>[])
+
+        Promise.all([
+            fetchNames("Customer", "customer_name"),
+            fetchNames("Supplier", "supplier_name"),
+        ]).then(([customers, suppliers]) => {
+            if (cancelled) return
+            const map: Record<string, string> = {}
+            customers.forEach(c => { if (c.customer_name) map[c.name] = c.customer_name })
+            suppliers.forEach(s => { if (s.supplier_name) map[s.name] = s.supplier_name })
+            setPartyNames(map)
+        })
+
+        return () => { cancelled = true }
+    }, [againstIDs, call])
+
     const formattedFromDate = formatDate(dates.fromDate)
     const formattedToDate = formatDate(dates.toDate)
 
@@ -131,7 +175,7 @@ const BankClearanceSummaryView = () => {
                         </Tooltip>
                     </TableCell>
                     <TableCell>{formatDate(row.clearance_date)}</TableCell>
-                    <TableCell className="max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap" title={row.against}>{row.against}</TableCell>
+                    <TableCell className="max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap" title={partyNames[row.against] ? `${partyNames[row.against]} (${row.against})` : row.against}>{partyNames[row.against] ? `${partyNames[row.against]} (${row.against})` : row.against}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.amount, bankAccount?.account_currency ?? getCompanyCurrency(companyID))}</TableCell>
                     <TableCell>
                         {row.clearance_date ? <Badge variant="outline" className="text-foreground px-1.5">
